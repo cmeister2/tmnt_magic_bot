@@ -3,84 +3,44 @@ from datetime import datetime
 import os
 import sys
 import time
-import wikipedia
+import json
 
 from lib.constants import BACKOFF, MAX_ATTEMPTS, MAX_STATUS_LEN, TIMEOUT_BACKOFF
-from lib import images
-from lib import mastodon
-from lib import twitter
+
+# from lib import images
+# from lib import mastodon
+# from lib import twitter
 from lib import words
 
 
 def main():
     print(f"[{datetime.now()}] Start")
-    title = searchForTMNT(MAX_ATTEMPTS, BACKOFF)
-    logo = images.getLogo(words.addPadding(title))
-    status_text = "\n".join((title, words.getWikiUrl(title)))
+    words.init_pronouncing()
 
-    if len(status_text) > MAX_STATUS_LEN:
-        status_text = title
+    with open("oracle-cards.json", "rt") as f:
+        database = json.load(f)
 
-    _ = twitter.sendTweet(status_text, logo)
-    _ = mastodon.sendToot(status_text, logo)
+    # database = [
+    #     {"name": "Nicol Bolas, the Arisen"},
+    #     {"name": "Isamaru, Hound of Konda"},
+    #     {"name": "Kiki-Jiki, Mirror Breaker"},
+    # ]
 
-    os.remove(logo)
-    print(f"[{datetime.now()}] Complete! Posted: {title}\n=====")
+    banned = ["Rivals of Ixalan Checklist"]
 
-def searchForTMNT(attempts=MAX_ATTEMPTS, backoff=BACKOFF):
-    """Loop MAX_ATTEMPT times, searching for a TMNT meter wikipedia title.
+    card_set = set()
 
-    Args:
-        Integer: attempts, retries remaining.
-        Integer: backoff, seconds to wait between each loop.
-    Returns:
-        String or False: String of wikipedia title in TMNT meter, or False if
-                         none found.
-    """
-    for attempt in range(attempts):
-        # print(f"\r{str(attempt * 10)} articles fetched...", end="")
-        sys.stdout.flush()
-        title = checkTenPagesForTMNT()
+    for card in database:
+        if "name" in card:
+            for card_name in card["name"].split(" // "):
+                if card_name not in banned and words.isTMNT(card_name, debug=False):
+                    card_set.add(card_name)
 
-        if type(title) == str and len(title) > 1:
-            print(f"\nAfter {attempt * 10} pages, found match: {title}")
-            return title
+    print(f"Number of TMNT cards: {len(card_set)}")
+    for card in sorted(card_set):
+        print(f"TMNT: {card}")
 
-        time.sleep(backoff)
-
-    print(f"\nNo matches found.")
-    sys.exit(1)
-
-
-def checkTenPagesForTMNT():
-    """Get 10 random wiki titles, check if any of them isTMNT().
-
-    We grab the max allowed Wikipedia page titles (10) using wikipedia.random().
-    If any title is in TMNT meter, return the title. Otherwise, return False.
-
-    Args:
-        None
-    Returns:
-        String or False: The TMNT compliant title, or False if none found.
-    """
-    wikipedia.set_rate_limiting(True)
-    try:
-        titles = wikipedia.random(10)
-    except wikipedia.exceptions.HTTPTimeoutError as e:
-        print(f"Wikipedia timout exception: {e}")
-        time.sleep(TIMEOUT_BACKOFF)
-        main()
-    except wikipedia.exceptions.WikipediaException as e:
-        print(f"Wikipedia exception: {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Exception while fetching wiki titles: {e}")
-        sys.exit(1)
-
-    for title in titles:
-        if words.isTMNT(title):
-            return title
-    return False
+    print(f"[{datetime.now()}] Complete! \n=====")
 
 
 if __name__ == "__main__":

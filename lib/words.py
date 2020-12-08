@@ -1,5 +1,6 @@
 import pronouncing
 import urllib
+import os
 import re
 
 from lib.constants import (
@@ -8,11 +9,17 @@ from lib.constants import (
     CHARS_ONLY,
     PRONUNCIATION_OVERRIDES,
     TMNT_STRESSES,
+    TMNT_LAX_STRESSES,
 )
 from num2words import num2words as n2w
 
 
-def isTMNT(title: str):
+def init_pronouncing():
+    with open(os.path.join(os.path.dirname(__file__), "magicdict.txt"), "rb") as f:
+        pronouncing.init_cmu(f)
+
+
+def isTMNT(title: str, debug=False):
     """Checks if a Wikipedia page title has the same stress pattern as TMNT.
 
     >>> isTMNT('Teenage Mutant Ninja Turtles')
@@ -28,12 +35,16 @@ def isTMNT(title: str):
         return False
 
     title = cleanStr(title)
-    title_stresses = getTitleStresses(title)
+    title_stresses = getTitleStresses(title, debug=debug)
 
-    if (not title_stresses) or (len(title_stresses) != 8):
+    return any([checkstress(x) for x in title_stresses])
+
+
+def checkstress(stress: str):
+    if (not stress) or (len(stress) != 8):
         return False
 
-    return True if TMNT_STRESSES.match(title_stresses) else False
+    return True if TMNT_STRESSES.match(stress) else False
 
 
 def containsBanned(title: str):
@@ -59,7 +70,19 @@ def containsBanned(title: str):
     return _containsBannedWord(title) or _containsBannedPhrase(title)
 
 
-def getTitleStresses(title: str):
+def generate_combinations(sets):
+    combos = sets.pop(0)
+    while sets:
+        next_combos = []
+        next_candidate = sets.pop(0)
+        for combo in combos:
+            for cand in next_candidate:
+                next_combos.append("{0}{1}".format(combo, cand))
+        combos = next_combos
+    return combos
+
+
+def getTitleStresses(title: str, debug=False):
     """Takes a wikipedia title and gets the combined stresses of all words.
 
     >>> getTitleStresses('Teenage Mutant Ninja Turtles')
@@ -71,22 +94,34 @@ def getTitleStresses(title: str):
         String, stresses of each syllable as 0, 1, and 2s.
     """
     title_words = title.split()
-    title_stresses = ""
-    while title_words:
-        # We will check later if this title had exactly 8 stresses,
-        # but we can stop checking this title if we exceed 8 anyway.
-        # Still being in the loop at 8 stresses means there are more.
-        if len(title_stresses) >= 8:
-            return None
-        word = title_words.pop(0)
-        word_stresses = getWordStresses(word)
-        # If word was a long number, it may have been parsed into several words.
-        if isinstance(word_stresses, list):
-            title_words = word_stresses + title_words
-        else:
-            title_stresses += getWordStresses(word)
 
-    return title_stresses
+    title_stresses = [getWordStresses(x) for x in title_words]
+    if debug:
+        print(f"{title}: {title_stresses}")
+
+    title_combos = generate_combinations(title_stresses)
+    if debug:
+        print(f"{title}: {title_combos}")
+
+    # title_stresses = ""
+    # while title_words:
+    #     # We will check later if this title had exactly 8 stresses,
+    #     # but we can stop checking this title if we exceed 8 anyway.
+    #     # Still being in the loop at 8 stresses means there are more.
+    #     if len(title_stresses) >= 8:
+    #         return None
+    #     word = title_words.pop(0)
+    #     word_stresses = getWordStresses(word)
+
+    #     print(f"Stresses for {word}: {word_stresses}")
+
+    #     # If word was a long number, it may have been parsed into several words.
+    #     if isinstance(word_stresses, list):
+    #         title_words = word_stresses + title_words
+    #     else:
+    #         title_stresses += getWordStresses(word)
+
+    return title_combos
 
 
 def getWordStresses(word: str):
@@ -99,11 +134,15 @@ def getWordStresses(word: str):
             return stresses
 
     phones = pronouncing.phones_for_word(word)
+    # print(f"- Word {word}: phones {phones}")
     if not phones:
         # Hacky way of discarding candidate title
         return "1111111111"
-    
-    stresses = pronouncing.stresses(phones[0])
+
+    stresses = [pronouncing.stresses(x) for x in phones]
+
+    # stresses = pronouncing.stresses(phones[0])
+    # print(f"- Stresses {stresses}: phones {phones}")
     return stresses
 
 

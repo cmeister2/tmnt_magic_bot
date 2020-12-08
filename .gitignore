@@ -3,3 +3,4 @@
 logos/
 .keys
 *.png
+venv/
